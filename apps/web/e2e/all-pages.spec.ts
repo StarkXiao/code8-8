@@ -264,5 +264,6 @@ function pageRoutes(data: Seeded): { path: string; expect: RegExp }[] {
       expect: /版本差异/,
     },
     { path: `/join/${data.inviteCode}`, expect: /全页面巡检厨房/ },
+    { path: `${base}/glossary`, expect: /家族词表/ },
   ];
 }

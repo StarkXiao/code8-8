@@ -11,6 +11,8 @@ import type {
   CreateStepInput,
   CreateVagueItemInput,
   CreateVerificationInput,
+  GlossaryReplacement,
+  GlossaryTermDto,
   IngredientDto,
   KitchenReferenceDto,
   NotificationDto,
@@ -68,6 +70,12 @@ export const workspaceApi = {
   ) => unwrap<KitchenReferenceDto>(api.post(`/workspaces/${workspaceId}/references`, input)),
   removeReference: (workspaceId: string, referenceId: string) =>
     unwrap<{ removed: string }>(api.delete(`/workspaces/${workspaceId}/references/${referenceId}`)),
+  glossary: (workspaceId: string) =>
+    unwrap<GlossaryTermDto[]>(api.get(`/workspaces/${workspaceId}/glossary`)),
+  addGlossaryTerm: (workspaceId: string, input: { term: string; replacement: string; note?: string | null }) =>
+    unwrap<GlossaryTermDto>(api.post(`/workspaces/${workspaceId}/glossary`, input)),
+  removeGlossaryTerm: (workspaceId: string, termId: string) =>
+    unwrap<{ removed: string }>(api.delete(`/workspaces/${workspaceId}/glossary/${termId}`)),
   activity: (workspaceId: string) =>
     api
       .get<{ data: ActivityLogDto[] }>(`/workspaces/${workspaceId}/activity`)
@@ -177,10 +185,13 @@ export const audioApi = {
       provider: string;
       segments: { startMs: number; endMs: number; text: string }[];
       needsManualInput: boolean;
+      appliedReplacements: GlossaryReplacement[];
       hint?: string;
     }>(api.post(`/audio/${audioId}/transcribe`)),
   updateTranscript: (audioId: string, transcript: string, transcriptStatus?: string) =>
-    unwrap<AudioAttachmentDto>(api.patch(`/audio/${audioId}/transcript`, { transcript, transcriptStatus })),
+    unwrap<{ audio: AudioAttachmentDto; appliedReplacements: GlossaryReplacement[] }>(
+      api.patch(`/audio/${audioId}/transcript`, { transcript, transcriptStatus }),
+    ),
   createClip: (audioId: string, input: { startMs: number; endMs: number; label?: string | null }) =>
     unwrap<AudioClipDto>(api.post(`/audio/${audioId}/clips`, input)),
   remove: (audioId: string) => unwrap<{ removed: string }>(api.delete(`/audio/${audioId}`)),

@@ -109,6 +109,37 @@ async function main() {
     ],
   });
 
+  // 家族词表：长辈的方言与习惯用词 → 全家统一用词。
+  // 转写时会自动替换，替换前的原始说法保留在音频记录里供人工核对。
+  await prisma.glossaryTerm.createMany({
+    data: [
+      {
+        id: 'seed-glossary-1',
+        workspaceId: workspace.id,
+        term: '洋柿子',
+        replacement: '番茄',
+        note: '外婆老家的叫法',
+        createdBy: organizer.id,
+      },
+      {
+        id: 'seed-glossary-2',
+        workspaceId: workspace.id,
+        term: '芫荽',
+        replacement: '香菜',
+        note: '老一辈的叫法，书面也写作芫荽',
+        createdBy: organizer.id,
+      },
+      {
+        id: 'seed-glossary-3',
+        workspaceId: workspace.id,
+        term: '瓢羹',
+        replacement: '勺子',
+        note: '外婆管汤勺叫瓢羹',
+        createdBy: organizer.id,
+      },
+    ],
+  });
+
   console.log('✔ 基线数据写入完成');
   console.log(`  空间：${workspace.name}（邀请码 ${workspace.inviteCode}）`);
   console.log(`  账号：${organizer.email} / ${elder.email}`);

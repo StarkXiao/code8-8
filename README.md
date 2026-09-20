@@ -106,7 +106,7 @@ npm run dev
 
 ```
 origin/
-├─ packages/shared/          前后端共享的枚举、Zod 校验、规格校验器、模糊描述规则库
+├─ packages/shared/          前后端共享的枚举、Zod 校验、规格校验器、模糊描述规则库、家族词表替换
 ├─ apps/server/              后端：Express + Prisma + Socket.IO
 │  ├─ prisma/schema.prisma   数据模型（唯一真相）
 │  ├─ prisma/migrations/     迁移 SQL（由 migrate diff 从 schema 生成）
@@ -115,7 +115,7 @@ origin/
 │  └─ tests/                 spec 单测 + closed-loop 集成测试
 ├─ apps/web/                 前端：React 18 + Vite + TanStack Query + antd
 │  ├─ src/components/        Waveform / GlobalPlayer / AudioRecorder / SpecEditor
-│  ├─ src/features/          录音工作台 / 追问台 / 草稿编辑器 / 版本差异 / 复做验证
+│  ├─ src/features/          录音工作台 / 追问台 / 草稿编辑器 / 版本差异 / 复做验证 / 家族词表
 │  └─ e2e/                   Playwright 闭环用例
 └─ data/                     运行时生成：app.db、audio/、backups/
 ```
@@ -139,6 +139,8 @@ origin/
 **转写是加速器，不是必需品。** 默认 `ASR_PROVIDER=manual`：不调用任何外部服务，转写由人工录入，全流程照样跑通。想省事可以切 `whisper-local`（本机装 whisper）或 `openai`（需要 API Key）。
 
 **参照物登记。** 先把"外婆家那只白瓷勺 = 一平勺 8g"量化一次存进空间，之后所有"半勺""一勺"都能换算成克。这是把模糊用量变成数值最有效的手段。
+
+**家族词表。** 把长辈的方言与习惯用词（"洋柿子""芫荽""瓢羹"……）收录成空间级词表。转写时 —— 无论是自动 ASR 还是人工录入保存 —— 都会自动把原说法替换成全家统一的用词；**替换前的原始说法和"哪个词换成了什么、换了几处"的明细会存在音频记录上**，录音工作台里可以对照核对。替换是单趟的：替换出来的新文本不会被二次替换，同一位置最长词优先（`packages/shared/src/glossary.ts`，前后端同一份实现）。
 
 **并发编辑不会互相覆盖。** 步骤、用量、待澄清条目、版本都带 `updatedAt`。前端提交时回传它读到的时间戳；如果这期间别人改过，服务端返回 `409 EDIT_CONFLICT` 并附上最新内容，而不是静默覆盖。不传该字段时退化为"最后写入者胜"，方便脚本与旧客户端接入。
 
@@ -175,10 +177,13 @@ origin/
 **回归测试**（`apps/server/tests/regression.test.ts`，30 个断言组）针对每一个修过的缺陷：
 跨家庭音频隔离、跨空间写入全面拦截（20+ 个按 id 的越权尝试）、软删除音频仍可回放、版本差异能反映结论变化、`includeDeleted` 布尔解析、运维端点鉴权、乐观锁 409（含"冲突时不覆盖别人改动"）、食谱不可搬迁、导出链接带令牌、登录限流、跨食谱引用校验、空间外指派与 @ 被拒、以及 Prisma 错误码映射（改不存在的成员返回 404 而不是 500）。
 
+**家族词表测试**（`apps/server/tests/glossary.test.ts`，14 个断言组）：
+替换语义（全量命中并计数、同位最长优先、单趟不链式）、词条收录与去重更新、角色权限（旁观者只读 / 贡献者收录 / 删除需整理者）、跨空间删除拦截、保存转写时自动替换且原始说法与替换明细落库、后续人工修订不冲掉原文、词表更新后按新词表生效、manual 驱动下重转写不动人工文本、词表严格按空间隔离。
+
 **UI 层闭环**（`apps/web/e2e/closed-loop.spec.ts`）：在真实 Chrome 里从注册走到发布，包含在波形上拖拽框选片段，最后验证导出真的能下载。
 
 ```bash
-npm run test        # 后端 60 个测试
+npm run test        # 后端 74 个测试
 npm run test:e2e    # 浏览器端 4 条用例（默认用系统 Chrome）
 ```
 

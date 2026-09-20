@@ -12,6 +12,7 @@ import type {
   VersionStatus,
   WorkspaceRole,
 } from './enums';
+import type { GlossaryReplacement } from './glossary';
 
 /**
  * 可复做规格：把一句模糊口述变成"别人照着也能做出来"的结构化结论。
@@ -172,6 +173,10 @@ export interface AudioAttachmentDto {
   peaks: number[] | null;
   sha256: string;
   transcript: string | null;
+  /** 词表自动替换前的原始转写（人工核对用）；没发生过替换时为 null */
+  transcriptRaw: string | null;
+  /** 本次自动替换明细：哪些原说法被换成了什么、各几处 */
+  transcriptReplacements: GlossaryReplacement[] | null;
   transcriptStatus: TranscriptStatus;
   createdAt: string;
   url: string;
@@ -277,6 +282,18 @@ export interface KitchenReferenceDto {
   label: string;
   amountValue: number;
   amountUnit: string;
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface GlossaryTermDto {
+  id: string;
+  workspaceId: string;
+  /** 长辈的原说法（方言/习惯用词） */
+  term: string;
+  /** 全家统一用词 */
+  replacement: string;
   note: string | null;
   createdBy: string;
   createdAt: string;

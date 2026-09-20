@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { Router } from 'express';
 import {
+  applyGlossary,
   audioQuerySchema,
   createClipSchema,
   isAllowedAudioMime,
@@ -229,12 +230,28 @@ audioRouter.post(
         ? await provider.transcribe({ path: absolutePath, mimeType: audio.mimeType })
         : { text: '', segments: [], empty: true };
 
+      // 家族词表：转写文本落库前先自动替换用词，
+      // 替换前的原文与命中明细一并保留，供人工核对。
+      const glossaryTerms = result.empty
+        ? []
+        : await prisma.glossaryTerm.findMany({
+            where: { workspaceId: audio.workspaceId },
+            select: { term: true, replacement: true },
+          });
+      const applied = applyGlossary(result.text, glossaryTerms);
+
       const updated = await prisma.audioAttachment.update({
         where: { id: audio.id },
-        data: {
-          transcript: result.empty ? audio.transcript : result.text,
-          transcriptStatus: 'done',
-        },
+        data: result.empty
+          ? { transcriptStatus: 'done' }
+          : {
+              transcript: applied.text,
+              transcriptStatus: 'done',
+              transcriptRaw: applied.replacements.length ? result.text : null,
+              transcriptReplacements: applied.replacements.length
+                ? stringifyJson(applied.replacements)
+                : null,
+            },
       });
 
       send(res, {
@@ -242,6 +259,7 @@ audioRouter.post(
         provider: provider.name,
         segments: result.segments,
         needsManualInput: result.empty,
+        appliedReplacements: applied.replacements,
         hint: result.empty
           ? '当前转写驱动为 manual：请在上方文本框中人工录入这段口述'
           : undefined,
@@ -261,18 +279,36 @@ audioRouter.patch(
   validateBody(updateTranscriptSchema),
   asyncHandler(async (req, res) => {
     const { audioId } = req.params;
-    await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
+    const access = await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
 
     const { transcript, transcriptStatus } = req.body as {
       transcript: string;
       transcriptStatus?: string;
     };
 
+    // 人工录入/修改的转写同样过一遍家族词表。
+    // 注意：只有真的发生了替换才更新"原始说法"存档 ——
+    // 之后对规范化文本的人工修订，不能把更早保存的原始记录冲掉。
+    const glossaryTerms = await prisma.glossaryTerm.findMany({
+      where: { workspaceId: access.workspaceId },
+      select: { term: true, replacement: true },
+    });
+    const applied = applyGlossary(transcript, glossaryTerms);
+
     const audio = await prisma.audioAttachment.update({
       where: { id: audioId! },
-      data: { transcript, transcriptStatus: transcriptStatus ?? 'done' },
+      data: {
+        transcript: applied.text,
+        transcriptStatus: transcriptStatus ?? 'done',
+        ...(applied.replacements.length
+          ? {
+              transcriptRaw: transcript,
+              transcriptReplacements: stringifyJson(applied.replacements),
+            }
+          : {}),
+      },
     });
-    send(res, toAudioDto(audio));
+    send(res, { audio: toAudioDto(audio), appliedReplacements: applied.replacements });
   }),
 );
 

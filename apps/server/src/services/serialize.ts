@@ -3,6 +3,8 @@ import type {
   AudioAttachmentDto,
   AudioClipDto,
   CommentDto,
+  GlossaryReplacement,
+  GlossaryTermDto,
   IngredientDto,
   KitchenReferenceDto,
   NotificationDto,
@@ -192,6 +194,8 @@ export function toAudioDto(audio: {
   peaks: string | null;
   sha256: string;
   transcript: string | null;
+  transcriptRaw: string | null;
+  transcriptReplacements: string | null;
   transcriptStatus: string;
   createdAt: Date;
 }): AudioAttachmentDto {
@@ -207,6 +211,10 @@ export function toAudioDto(audio: {
     peaks: parseNumberArray(audio.peaks),
     sha256: audio.sha256,
     transcript: audio.transcript,
+    transcriptRaw: audio.transcriptRaw,
+    transcriptReplacements: audio.transcriptReplacements
+      ? parseJson<GlossaryReplacement[] | null>(audio.transcriptReplacements, null)
+      : null,
     transcriptStatus: audio.transcriptStatus as TranscriptStatus,
     createdAt: audio.createdAt.toISOString(),
     url: `/api/audio/${audio.id}/stream`,
@@ -406,6 +414,26 @@ export function toReferenceDto(reference: {
     note: reference.note,
     createdBy: reference.createdBy,
     createdAt: reference.createdAt.toISOString(),
+  };
+}
+
+export function toGlossaryTermDto(term: {
+  id: string;
+  workspaceId: string;
+  term: string;
+  replacement: string;
+  note: string | null;
+  createdBy: string;
+  createdAt: Date;
+}): GlossaryTermDto {
+  return {
+    id: term.id,
+    workspaceId: term.workspaceId,
+    term: term.term,
+    replacement: term.replacement,
+    note: term.note,
+    createdBy: term.createdBy,
+    createdAt: term.createdAt.toISOString(),
   };
 }
 

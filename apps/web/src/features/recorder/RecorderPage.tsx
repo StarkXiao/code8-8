@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   App as AntApp,
+  Alert,
   Button,
   Divider,
   Form,
@@ -111,6 +112,10 @@ export function RecorderPage() {
       setRecorded(null);
       if (result.needsManualInput) {
         message.info('音频已保存。当前转写模式是"人工录入"，请在右侧把听到的内容打下来。');
+      } else if (result.appliedReplacements.length > 0) {
+        message.success(
+          `已用 ${result.provider} 自动转写，并按家族词表替换 ${result.appliedReplacements.length} 类用词（原始说法已保留在下方）。`,
+        );
       } else {
         message.success(`已用 ${result.provider} 自动转写，请核对后修改。`);
       }
@@ -122,9 +127,16 @@ export function RecorderPage() {
 
   const saveTranscriptMutation = useMutation({
     mutationFn: () => audioApi.updateTranscript(audio!.id, transcript),
-    onSuccess: (updated) => {
-      setAudio(updated);
-      message.success('转写文本已保存');
+    onSuccess: (result) => {
+      setAudio(result.audio);
+      setTranscript(result.audio.transcript ?? '');
+      if (result.appliedReplacements.length > 0) {
+        message.success(
+          `转写文本已保存，家族词表自动替换了 ${result.appliedReplacements.length} 类用词，原始说法保留在下方供核对。`,
+        );
+      } else {
+        message.success('转写文本已保存');
+      }
       void queryClient.invalidateQueries({ queryKey: ['audio', recipeId] });
     },
     onError: (error) => message.error(errorMessage(error)),
@@ -375,6 +387,29 @@ export function RecorderPage() {
               onChange={(e) => setTranscript(e.target.value)}
               placeholder={'例如：\n先炒糖色，放一点糖就行\n中火炒到收汁\n肉炖到用筷子能戳透'}
             />
+
+            {audio.transcriptRaw && (
+              <Alert
+                style={{ marginTop: '0.75rem' }}
+                type="info"
+                showIcon
+                message="家族词表已自动替换用词，原始说法保留如下，供人工核对"
+                description={
+                  <>
+                    <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>
+                      {audio.transcriptRaw}
+                    </Typography.Paragraph>
+                    <Space wrap size={[4, 4]}>
+                      {(audio.transcriptReplacements ?? []).map((item) => (
+                        <Tag key={item.term} color="orange">
+                          {item.term} → {item.replacement} ×{item.count}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </>
+                }
+              />
+            )}
 
             <div className="froa-row" style={{ marginTop: '0.75rem' }}>
               <Button type="primary" onClick={() => saveTranscriptMutation.mutate()} loading={saveTranscriptMutation.isPending}>

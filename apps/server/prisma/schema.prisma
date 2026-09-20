@@ -43,6 +43,7 @@ model User {
   notifications      Notification[]
   activities         ActivityLog[]
   referencesCreated  KitchenReference[]
+  glossaryTermsCreated GlossaryTerm[]
 }
 
 model Workspace {
@@ -59,6 +60,7 @@ model Workspace {
   audio      AudioAttachment[]
   activities ActivityLog[]
   references KitchenReference[]
+  glossaryTerms GlossaryTerm[]
 }
 
 model WorkspaceMember {
@@ -91,6 +93,27 @@ model KitchenReference {
   creator   User      @relation(fields: [createdBy], references: [id])
 
   @@unique([workspaceId, label])
+}
+
+/// 家族词表：长辈的方言/习惯用词 → 全家统一用词。
+/// 转写（自动或人工）时按此表自动替换；替换前的原文与命中明细
+/// 存在 AudioAttachment 上，供人工核对。
+model GlossaryTerm {
+  id          String   @id
+  workspaceId String
+  /// 长辈的原说法，例如"洋柿子"
+  term        String
+  /// 统一后的用词，例如"番茄"
+  replacement String
+  note        String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation(fields: [createdBy], references: [id])
+
+  @@unique([workspaceId, term])
 }
 
 // ------------------------------------------------------------------
@@ -214,6 +237,10 @@ model AudioAttachment {
   peaks            String?
   sha256           String
   transcript       String?
+  /// 词表自动替换前的原始转写（人工核对用）
+  transcriptRaw    String?
+  /// JSON：本次自动替换明细 [{ term, replacement, count }]
+  transcriptReplacements String?
   transcriptStatus String    @default("none")
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())

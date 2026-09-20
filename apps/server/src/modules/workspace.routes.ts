@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createWorkspaceSchema,
+  glossaryTermSchema,
   joinWorkspaceSchema,
   kitchenReferenceSchema,
   updateMemberRoleSchema,
@@ -14,7 +15,13 @@ import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { assertWorkspaceRole, getMembership } from '../services/access';
 import { logActivity } from '../services/activity';
-import { toActivityDto, toMemberDto, toReferenceDto, toWorkspaceDto } from '../services/serialize';
+import {
+  toActivityDto,
+  toGlossaryTermDto,
+  toMemberDto,
+  toReferenceDto,
+  toWorkspaceDto,
+} from '../services/serialize';
 
 export const workspaceRouter: Router = Router();
 
@@ -255,6 +262,72 @@ workspaceRouter.delete(
 
     await prisma.kitchenReference.delete({ where: { id: referenceId! } });
     send(res, { removed: referenceId });
+  }),
+);
+
+// ------------------------------------------------------------------
+// 家族词表（长辈的方言/习惯用词 → 统一用词，转写时自动替换）
+// ------------------------------------------------------------------
+
+workspaceRouter.get(
+  '/:workspaceId/glossary',
+  asyncHandler(async (req, res) => {
+    const { workspaceId } = req.params;
+    await getMembership(req.auth!.userId, workspaceId!);
+
+    const terms = await prisma.glossaryTerm.findMany({
+      where: { workspaceId: workspaceId! },
+      orderBy: { createdAt: 'asc' },
+    });
+    send(res, terms.map(toGlossaryTermDto));
+  }),
+);
+
+workspaceRouter.post(
+  '/:workspaceId/glossary',
+  validateBody(glossaryTermSchema),
+  asyncHandler(async (req, res) => {
+    const { workspaceId } = req.params;
+    await assertWorkspaceRole(req.auth!.userId, workspaceId!, 'contributor');
+    const { term, replacement, note } = req.body as {
+      term: string;
+      replacement: string;
+      note?: string | null;
+    };
+
+    // 同一个原说法在空间内唯一：重复提交视为更新统一用词与备注
+    const glossaryTerm = await prisma.glossaryTerm.upsert({
+      where: { workspaceId_term: { workspaceId: workspaceId!, term } },
+      create: {
+        id: newId(),
+        workspaceId: workspaceId!,
+        term,
+        replacement,
+        note: note ?? null,
+        createdBy: req.auth!.userId,
+      },
+      update: { replacement, note: note ?? null },
+    });
+
+    created(res, toGlossaryTermDto(glossaryTerm));
+  }),
+);
+
+workspaceRouter.delete(
+  '/:workspaceId/glossary/:termId',
+  asyncHandler(async (req, res) => {
+    const { workspaceId, termId } = req.params;
+    await assertWorkspaceRole(req.auth!.userId, workspaceId!, 'editor');
+
+    // 与参照物同理：必须确认词条属于本空间，否则凭 id 就能删掉别人家的词
+    const term = await prisma.glossaryTerm.findUnique({
+      where: { id: termId! },
+      select: { workspaceId: true },
+    });
+    if (!term || term.workspaceId !== workspaceId) throw notFound('词表条目');
+
+    await prisma.glossaryTerm.delete({ where: { id: termId! } });
+    send(res, { removed: termId });
   }),
 );
 

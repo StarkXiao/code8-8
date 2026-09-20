@@ -66,6 +66,21 @@ export const kitchenReferenceSchema = z.object({
   note: z.string().trim().max(500).nullish(),
 });
 
+/**
+ * 家族词表条目：长辈的原说法 → 全家统一用词。
+ * 原说法与统一用词不能相同（否则这条词表没有意义）。
+ */
+export const glossaryTermSchema = z
+  .object({
+    term: z.string().trim().min(1, '请填写长辈的原说法，例如"洋柿子"').max(64),
+    replacement: z.string().trim().min(1, '请填写统一后的用词，例如"番茄"').max(64),
+    note: z.string().trim().max(500).nullish(),
+  })
+  .refine((value) => value.term !== value.replacement, {
+    message: '原说法与统一用词不能相同',
+    path: ['replacement'],
+  });
+
 /* ------------------------------------------------------------------ */
 /* 食谱与版本                                                          */
 /* ------------------------------------------------------------------ */
