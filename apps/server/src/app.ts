@@ -17,6 +17,7 @@ import { vagueItemRouter } from './modules/vagueItem.routes';
 import { commentRouter } from './modules/comment.routes';
 import { verificationRouter } from './modules/verification.routes';
 import { notificationRouter } from './modules/notification.routes';
+import { glossaryRouter } from './modules/glossary.routes';
 import { runIntegrityScan } from './services/integrity';
 
 export function createApp(): Express {
@@ -85,6 +86,7 @@ export function createApp(): Express {
   );
   app.use('/api/auth', authRouter);
   app.use('/api/workspaces', workspaceRouter);
+  app.use('/api', glossaryRouter);
   app.use('/api/recipes', recipeRouter);
   app.use('/api', versionRouter);
   app.use('/api', audioRouter);

@@ -4,14 +4,17 @@ import {
   audioQuerySchema,
   createClipSchema,
   isAllowedAudioMime,
+  reviewReplacement,
+  reviewReplacementSchema,
   updateTranscriptSchema,
   uploadAudioFieldsSchema,
+  type TranscriptReplacement,
 } from '@froa/shared';
 import { prisma } from '../db/client';
 import { ApiError, notFound } from '../lib/errors';
 import { asyncHandler, created, send } from '../lib/http';
 import { newId, sha256 } from '../lib/ids';
-import { stringifyJson } from '../lib/json';
+import { parseJson, stringifyJson } from '../lib/json';
 import { logger } from '../lib/logger';
 import { requireAuth } from '../middleware/auth';
 import { audioUpload, translateUploadError } from '../middleware/upload';
@@ -24,6 +27,7 @@ import {
   getMembership,
 } from '../services/access';
 import { logActivity } from '../services/activity';
+import { applyWorkspaceGlossary, bumpUsageCounts } from '../services/glossary';
 import { buildAudioKey, extensionForMime, storage } from '../services/storage';
 import { transcriptionProvider } from '../services/transcription';
 import { toAudioDto, toClipDto } from '../services/serialize';
@@ -211,7 +215,7 @@ audioRouter.post(
   '/audio/:audioId/transcribe',
   asyncHandler(async (req, res) => {
     const { audioId } = req.params;
-    await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
+    const access = await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
 
     const audio = await prisma.audioAttachment.findUnique({ where: { id: audioId! } });
     if (!audio) throw new ApiError('AUDIO_NOT_FOUND');
@@ -229,10 +233,34 @@ audioRouter.post(
         ? await provider.transcribe({ path: absolutePath, mimeType: audio.mimeType })
         : { text: '', segments: [], empty: true };
 
+      let transcriptText = result.empty ? audio.transcript : result.text;
+      let transcriptRaw = audio.transcriptRaw;
+      let replacements: TranscriptReplacement[] = parseJson<TranscriptReplacement[]>(
+        audio.replacements,
+        [],
+      );
+
+      // 转写出稿时自动套用家族词表；原始说法存进 transcriptRaw 供人工核对。
+      // manual 驱动（等人工录入）或空结果不套；已经套过词表的不重复套。
+      if (!result.empty && result.text && !audio.transcriptRaw) {
+        const applied = await applyWorkspaceGlossary(access.workspaceId, result.text);
+        transcriptText = applied.text;
+        transcriptRaw = applied.raw;
+        replacements = applied.replacements;
+        if (applied.replacements.length) {
+          await bumpUsageCounts(
+            access.workspaceId,
+            applied.replacements.map((replacement) => replacement.entryId),
+          );
+        }
+      }
+
       const updated = await prisma.audioAttachment.update({
         where: { id: audio.id },
         data: {
-          transcript: result.empty ? audio.transcript : result.text,
+          transcript: transcriptText,
+          transcriptRaw,
+          replacements: stringifyJson(replacements),
           transcriptStatus: 'done',
         },
       });
@@ -242,9 +270,12 @@ audioRouter.post(
         provider: provider.name,
         segments: result.segments,
         needsManualInput: result.empty,
+        replacementCount: replacements.length,
         hint: result.empty
           ? '当前转写驱动为 manual：请在上方文本框中人工录入这段口述'
-          : undefined,
+          : replacements.length
+            ? `已自动转写，并用家族词表替换了 ${replacements.length} 处用词，请逐条核对（原始说法已保留）。`
+            : undefined,
       });
     } catch (error) {
       await prisma.audioAttachment.update({
@@ -261,18 +292,97 @@ audioRouter.patch(
   validateBody(updateTranscriptSchema),
   asyncHandler(async (req, res) => {
     const { audioId } = req.params;
-    await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
+    const access = await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
 
-    const { transcript, transcriptStatus } = req.body as {
+    const { transcript, transcriptStatus, applyGlossary: applyGlossaryNow } = req.body as {
       transcript: string;
       transcriptStatus?: string;
+      applyGlossary?: boolean;
     };
+
+    const before = await prisma.audioAttachment.findUnique({ where: { id: audioId! } });
+    if (!before) throw new ApiError('AUDIO_NOT_FOUND');
+
+    // 只有"第一次成稿"（还没留过原始说法）时才允许套用词表；
+    // 之后每次保存都是人工编辑，绝不重新替换，否则会冲掉核对结果。
+    if (applyGlossaryNow && !before.transcriptRaw && transcript.trim()) {
+      const applied = await applyWorkspaceGlossary(access.workspaceId, transcript);
+      if (applied.replacements.length) {
+        await bumpUsageCounts(
+          access.workspaceId,
+          applied.replacements.map((replacement) => replacement.entryId),
+        );
+      }
+      const updated = await prisma.audioAttachment.update({
+        where: { id: audioId! },
+        data: {
+          transcript: applied.text,
+          transcriptRaw: applied.raw,
+          replacements: stringifyJson(applied.replacements),
+          transcriptStatus: transcriptStatus ?? 'done',
+        },
+      });
+      // 与普通保存保持同一种响应形状：直接返回音频 DTO（替换记录在其 replacements 字段里）
+      send(res, toAudioDto(updated));
+      return;
+    }
 
     const audio = await prisma.audioAttachment.update({
       where: { id: audioId! },
       data: { transcript, transcriptStatus: transcriptStatus ?? 'done' },
     });
+    // 与原约定一致：直接返回音频 DTO
     send(res, toAudioDto(audio));
+  }),
+);
+
+/**
+ * 对一条转写上的某一处词表替换做人工核对：
+ * action=revert 还原成方言原文，action=accept 保留/重新应用标准说法。
+ * 坐标相对"原始说法"固定，服务端用同一份共享函数精确改写文本，不靠前端传整段。
+ */
+audioRouter.post(
+  '/audio/:audioId/replacements/review',
+  validateBody(reviewReplacementSchema),
+  asyncHandler(async (req, res) => {
+    const { audioId } = req.params;
+    await assertAudioRole(req.auth!.userId, audioId!, 'contributor');
+    const { start, end, action } = req.body as {
+      start: number;
+      end: number;
+      action: 'accept' | 'revert';
+    };
+
+    const audio = await prisma.audioAttachment.findUnique({ where: { id: audioId! } });
+    if (!audio) throw new ApiError('AUDIO_NOT_FOUND');
+    if (!audio.transcriptRaw) {
+      throw new ApiError('VALIDATION_FAILED', '这条转写没有套用词表，没有可核对的替换');
+    }
+
+    const replacements = parseJson<TranscriptReplacement[]>(audio.replacements, []);
+    try {
+      const reviewed = reviewReplacement(
+        audio.transcript ?? '',
+        audio.transcriptRaw,
+        replacements,
+        { start, end },
+        action === 'revert' ? 'reverted' : 'accepted',
+      );
+
+      const updated = await prisma.audioAttachment.update({
+        where: { id: audioId! },
+        data: {
+          transcript: reviewed.text,
+          replacements: stringifyJson(reviewed.replacements),
+        },
+      });
+      send(res, toAudioDto(updated));
+    } catch (error) {
+      throw new ApiError(
+        'VALIDATION_FAILED',
+        error instanceof Error ? error.message : '无法核对这处替换，请直接在文本框中修改',
+      );
+    }
   }),
 );
 

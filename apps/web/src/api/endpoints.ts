@@ -11,6 +11,7 @@ import type {
   CreateStepInput,
   CreateVagueItemInput,
   CreateVerificationInput,
+  GlossaryEntryDto,
   IngredientDto,
   KitchenReferenceDto,
   NotificationDto,
@@ -19,6 +20,7 @@ import type {
   RecipeVersionDto,
   ResolvedSpec,
   StepDto,
+  TranscriptReplacement,
   UserDto,
   VagueCategory,
   VagueItemDto,
@@ -72,6 +74,35 @@ export const workspaceApi = {
     api
       .get<{ data: ActivityLogDto[] }>(`/workspaces/${workspaceId}/activity`)
       .then((r) => r.data.data),
+};
+
+/* ---------------- 家族词表 ---------------- */
+
+export interface GlossaryEntryInput {
+  dialect: string;
+  standard: string;
+  type?: 'dialect' | 'habit';
+  note?: string | null;
+  enabled?: boolean;
+}
+
+export interface GlossaryPreview {
+  text: string;
+  replacements: TranscriptReplacement[];
+  count: number;
+}
+
+export const glossaryApi = {
+  list: (workspaceId: string) =>
+    unwrap<GlossaryEntryDto[]>(api.get(`/workspaces/${workspaceId}/glossary`)),
+  create: (workspaceId: string, input: GlossaryEntryInput) =>
+    unwrap<GlossaryEntryDto>(api.post(`/workspaces/${workspaceId}/glossary`, input)),
+  update: (workspaceId: string, entryId: string, input: Partial<GlossaryEntryInput>) =>
+    unwrap<GlossaryEntryDto>(api.patch(`/workspaces/${workspaceId}/glossary/${entryId}`, input)),
+  remove: (workspaceId: string, entryId: string) =>
+    unwrap<{ removed: string }>(api.delete(`/workspaces/${workspaceId}/glossary/${entryId}`)),
+  preview: (workspaceId: string, text: string) =>
+    unwrap<GlossaryPreview>(api.post(`/workspaces/${workspaceId}/glossary/preview`, { text })),
 };
 
 /* ---------------- 食谱 ---------------- */
@@ -177,10 +208,30 @@ export const audioApi = {
       provider: string;
       segments: { startMs: number; endMs: number; text: string }[];
       needsManualInput: boolean;
+      replacementCount?: number;
       hint?: string;
     }>(api.post(`/audio/${audioId}/transcribe`)),
-  updateTranscript: (audioId: string, transcript: string, transcriptStatus?: string) =>
-    unwrap<AudioAttachmentDto>(api.patch(`/audio/${audioId}/transcript`, { transcript, transcriptStatus })),
+  updateTranscript: (
+    audioId: string,
+    transcript: string,
+    options?: { transcriptStatus?: string; applyGlossary?: boolean },
+  ) =>
+    unwrap<AudioAttachmentDto>(
+      api.patch(`/audio/${audioId}/transcript`, {
+        transcript,
+        transcriptStatus: options?.transcriptStatus,
+        applyGlossary: options?.applyGlossary,
+      }),
+    ),
+  /** 核对一处词表替换：revert 还原方言，accept 采用标准说法 */
+  reviewReplacement: (
+    audioId: string,
+    target: { start: number; end: number },
+    action: 'accept' | 'revert',
+  ) =>
+    unwrap<AudioAttachmentDto>(
+      api.post(`/audio/${audioId}/replacements/review`, { ...target, action }),
+    ),
   createClip: (audioId: string, input: { startMs: number; endMs: number; label?: string | null }) =>
     unwrap<AudioClipDto>(api.post(`/audio/${audioId}/clips`, input)),
   remove: (audioId: string) => unwrap<{ removed: string }>(api.delete(`/audio/${audioId}`)),

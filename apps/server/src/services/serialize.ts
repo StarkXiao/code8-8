@@ -3,6 +3,7 @@ import type {
   AudioAttachmentDto,
   AudioClipDto,
   CommentDto,
+  GlossaryEntryDto,
   IngredientDto,
   KitchenReferenceDto,
   NotificationDto,
@@ -10,6 +11,7 @@ import type {
   RecipeVersionDto,
   ResolvedSpec,
   StepDto,
+  TranscriptReplacement,
   UserDto,
   VagueItemDto,
   VerificationRunDto,
@@ -20,9 +22,11 @@ import type {
   AudioKind,
   CommentTargetType,
   Confidence,
+  GlossaryEntryType,
   HeatLevel,
   NotificationType,
   RecipeStatus,
+  ReplacementStatus,
   TranscriptStatus,
   VagueCategory,
   VagueStatus,
@@ -192,6 +196,8 @@ export function toAudioDto(audio: {
   peaks: string | null;
   sha256: string;
   transcript: string | null;
+  transcriptRaw?: string | null;
+  replacements?: string | null;
   transcriptStatus: string;
   createdAt: Date;
 }): AudioAttachmentDto {
@@ -207,6 +213,8 @@ export function toAudioDto(audio: {
     peaks: parseNumberArray(audio.peaks),
     sha256: audio.sha256,
     transcript: audio.transcript,
+    transcriptRaw: audio.transcriptRaw ?? null,
+    replacements: parseJson<TranscriptReplacement[]>(audio.replacements ?? null, []),
     transcriptStatus: audio.transcriptStatus as TranscriptStatus,
     createdAt: audio.createdAt.toISOString(),
     url: `/api/audio/${audio.id}/stream`,
@@ -406,6 +414,34 @@ export function toReferenceDto(reference: {
     note: reference.note,
     createdBy: reference.createdBy,
     createdAt: reference.createdAt.toISOString(),
+  };
+}
+
+export function toGlossaryEntryDto(entry: {
+  id: string;
+  workspaceId: string;
+  dialect: string;
+  standard: string;
+  type: string;
+  note: string | null;
+  enabled: boolean;
+  usageCount: number;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): GlossaryEntryDto {
+  return {
+    id: entry.id,
+    workspaceId: entry.workspaceId,
+    dialect: entry.dialect,
+    standard: entry.standard,
+    type: entry.type as GlossaryEntryType,
+    note: entry.note,
+    enabled: entry.enabled,
+    usageCount: entry.usageCount,
+    createdBy: entry.createdBy,
+    createdAt: entry.createdAt.toISOString(),
+    updatedAt: entry.updatedAt.toISOString(),
   };
 }
 

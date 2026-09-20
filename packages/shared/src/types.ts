@@ -2,9 +2,11 @@ import type {
   AudioKind,
   CommentTargetType,
   Confidence,
+  GlossaryEntryType,
   HeatLevel,
   NotificationType,
   RecipeStatus,
+  ReplacementStatus,
   TranscriptStatus,
   VagueCategory,
   VagueStatus,
@@ -171,7 +173,12 @@ export interface AudioAttachmentDto {
   durationMs: number;
   peaks: number[] | null;
   sha256: string;
+  /** 成稿转写：已套用家族词表、经过人工编辑的文本 */
   transcript: string | null;
+  /** 原始说法：套用词表之前的转写原文，供人工核对；未套用词表时为 null */
+  transcriptRaw: string | null;
+  /** JSON：TranscriptReplacement[]，每一处自动替换的核对记录 */
+  replacements: TranscriptReplacement[];
   transcriptStatus: TranscriptStatus;
   createdAt: string;
   url: string;
@@ -280,6 +287,51 @@ export interface KitchenReferenceDto {
   note: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+/**
+ * 家族词表条目：把长辈嘴里的方言/习惯用词，登记成"标准说法"。
+ * 转写成稿时自动替换；同一原始说法在每个空间只登记一条（后登记的覆盖更新）。
+ */
+export interface GlossaryEntryDto {
+  id: string;
+  workspaceId: string;
+  /** 方言 / 习惯用词原文，例如"洋柿子" */
+  dialect: string;
+  /** 对应的标准说法，例如"西红柿" */
+  standard: string;
+  type: GlossaryEntryType;
+  note: string | null;
+  /** 是否参与转写自动替换（关掉只保留登记，不改文本） */
+  enabled: boolean;
+  /** 在多少条转写的替换记录里出现过（含已还原的） */
+  usageCount: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * 一条转写文本上的一次词表替换记录。
+ * 偏移量（start/end）与 occurrence 都相对"原始说法 transcriptRaw"，
+ * 因此整理者之后手工编辑文本也不会让记录错位。
+ */
+export interface TranscriptReplacement {
+  entryId: string;
+  dialect: string;
+  standard: string;
+  start: number;
+  end: number;
+  /** 同一词条在原文中第几次出现（从 0 起，用于唯一定位与恢复） */
+  occurrence: number;
+  status: ReplacementStatus;
+}
+
+/** 词表替换引擎的产出：成稿文本 + 原始说法 + 替换记录 */
+export interface GlossaryApplyResult {
+  text: string;
+  raw: string;
+  replacements: TranscriptReplacement[];
 }
 
 export interface RecipeVersionDto {

@@ -65,6 +65,16 @@ async function seed(request: APIRequestContext): Promise<Seeded> {
     data: { label: '白瓷勺', amountValue: 8, amountUnit: 'g', note: '一平勺' },
   });
 
+  // 家族词表：方言与习惯用词各来一条
+  await api(request, 'post', `/workspaces/${workspace.id}/glossary`, {
+    token,
+    data: { dialect: '洋柿子', standard: '西红柿', type: 'dialect', note: '外婆这么叫' },
+  });
+  await api(request, 'post', `/workspaces/${workspace.id}/glossary`, {
+    token,
+    data: { dialect: '大料', standard: '八角', type: 'habit' },
+  });
+
   // 再拉一个只读成员进来：按角色分支渲染的地方最容易出问题，之前完全没测过
   const viewer = await api<{ tokens: Seeded['tokens']; user: { id: string } }>(
     request,
@@ -237,7 +247,8 @@ test('只读角色的每个页面同样不报错', async ({ page, request }) => 
   }
 
   // 只读角色不应该看到任何"能改"的入口
-  await page.goto(`${pageRoutes(data)[6]!.path}`);
+  const editorRoute = pageRoutes(data).find((route) => route.path.endsWith('/edit'))!;
+  await page.goto(editorRoute.path);
   await expect(page.getByRole('button', { name: /添加步骤|提交并发布/ })).toHaveCount(0);
 
   expect(problems, `只读角色页面报错：\n${problems.join('\n')}`).toEqual([]);
@@ -251,6 +262,7 @@ function pageRoutes(data: Seeded): { path: string; expect: RegExp }[] {
     { path: '/', expect: /我的家庭空间/ },
     { path: base, expect: /全页面巡检厨房/ },
     { path: `${base}/members`, expect: /成员与参照物/ },
+    { path: `${base}/glossary`, expect: /家族词表/ },
     { path: `${base}/notifications`, expect: /通知/ },
     { path: `${base}/activity`, expect: /操作日志/ },
     { path: recipe, expect: /全页面红烧肉/ },

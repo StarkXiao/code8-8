@@ -4,6 +4,7 @@ import {
   AUDIO_KINDS,
   COMMENT_TARGET_TYPES,
   CONFIDENCE_LEVELS,
+  GLOSSARY_ENTRY_TYPES,
   HEAT_LEVELS,
   VAGUE_CATEGORIES,
   VERIFICATION_RESULTS,
@@ -64,6 +65,52 @@ export const kitchenReferenceSchema = z.object({
   amountValue: z.number().positive('必须大于 0'),
   amountUnit: z.string().trim().min(1).max(16),
   note: z.string().trim().max(500).nullish(),
+});
+
+/* ------------------------------------------------------------------ */
+/* 家族词表（方言/习惯用词）                                            */
+/* ------------------------------------------------------------------ */
+
+const glossaryEntryFields = {
+  dialect: z.string().trim().min(1, '请填写长辈的原话，例如"洋柿子"').max(32),
+  standard: z.string().trim().min(1, '请填写对应的标准说法，例如"西红柿"').max(32),
+  type: z.enum(GLOSSARY_ENTRY_TYPES).default('dialect'),
+  note: z.string().trim().max(500).nullish(),
+  enabled: z.boolean().optional(),
+};
+
+export const glossaryEntrySchema = z
+  .object(glossaryEntryFields)
+  .refine((value) => value.dialect !== value.standard, {
+    message: '原话和标准说法不能一样 —— 一样就不需要替换了',
+    path: ['standard'],
+  });
+
+/** 部分更新：两个词都传了才检查"不能一样"；type 不传时保持原值 */
+export const updateGlossaryEntrySchema = z
+  .object({
+    dialect: glossaryEntryFields.dialect.optional(),
+    standard: glossaryEntryFields.standard.optional(),
+    type: z.enum(GLOSSARY_ENTRY_TYPES).optional(),
+    note: z.string().trim().max(500).nullish(),
+    enabled: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.dialect === undefined || value.standard === undefined || value.dialect !== value.standard,
+    { message: '原话和标准说法不能一样', path: ['standard'] },
+  );
+
+/** 套用词表前的预览：不落库，只返回替换结果给前端高亮确认 */
+export const previewGlossarySchema = z.object({
+  text: z.string().max(20000),
+});
+
+/** 对一条转写上的某一处替换做人工核对（确认 / 还原 / 重新应用） */
+export const reviewReplacementSchema = z.object({
+  /** 替换记录在"原始说法"里的起止偏移，用来唯一定位是哪一处 */
+  start: z.number().int().min(0),
+  end: z.number().int().min(1),
+  action: z.enum(['accept', 'revert']),
 });
 
 /* ------------------------------------------------------------------ */
@@ -207,6 +254,11 @@ export const createClipSchema = z.object({
 export const updateTranscriptSchema = z.object({
   transcript: z.string().max(20000),
   transcriptStatus: z.enum(['none', 'pending', 'done', 'failed']).optional(),
+  /**
+   * 是否对这段人工录入的文本套用家族词表。
+   * 只在"首次成稿"（还没有原始说法留存）时生效；之后保存只是人工编辑，不会重复替换。
+   */
+  applyGlossary: z.boolean().optional(),
 });
 
 /* ------------------------------------------------------------------ */

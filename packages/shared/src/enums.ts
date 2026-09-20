@@ -50,6 +50,22 @@ export type AudioKind = (typeof AUDIO_KINDS)[number];
 export const TRANSCRIPT_STATUSES = ['none', 'pending', 'done', 'failed'] as const;
 export type TranscriptStatus = (typeof TRANSCRIPT_STATUSES)[number];
 
+/**
+ * 家族词表条目的类型。
+ * dialect = 方言词（"洋柿子"），habit = 长辈习惯用词（"那只老碗"）。
+ */
+export const GLOSSARY_ENTRY_TYPES = ['dialect', 'habit'] as const;
+export type GlossaryEntryType = (typeof GLOSSARY_ENTRY_TYPES)[number];
+
+/**
+ * 一处词表替换在某条转写上的核对状态。
+ * pending   = 已自动替换，等人工核对（文本里是标准说法）
+ * accepted  = 人工确认过
+ * reverted  = 人工还原，文本里保留方言原文
+ */
+export const REPLACEMENT_STATUSES = ['pending', 'accepted', 'reverted'] as const;
+export type ReplacementStatus = (typeof REPLACEMENT_STATUSES)[number];
+
 export const VERIFICATION_RESULTS = ['success', 'partial', 'fail'] as const;
 export type VerificationResult = (typeof VERIFICATION_RESULTS)[number];
 
@@ -162,4 +178,15 @@ export const HEAT_LEVEL_LABELS: Record<HeatLevel, string> = {
   medium: '中火',
   medium_high: '中大火',
   high: '大火',
+};
+
+export const GLOSSARY_ENTRY_TYPE_LABELS: Record<GlossaryEntryType, string> = {
+  dialect: '方言',
+  habit: '习惯用词',
+};
+
+export const REPLACEMENT_STATUS_LABELS: Record<ReplacementStatus, string> = {
+  pending: '待核对',
+  accepted: '已确认',
+  reverted: '已还原',
 };

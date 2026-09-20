@@ -25,10 +25,11 @@ import {
   type AudioClipDto,
   type VagueCategory,
 } from '@froa/shared';
-import { audioApi, recipeApi, vagueItemApi, workspaceApi } from '../../api/endpoints';
+import { audioApi, glossaryApi, recipeApi, vagueItemApi, workspaceApi } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
 import { AudioRecorder, analyzeAudio, type RecordedAudio } from '../../components/AudioRecorder';
 import { Waveform, formatMs, type WaveformSelection } from '../../components/Waveform';
+import { TranscriptGlossaryReview } from '../../components/TranscriptGlossaryReview';
 import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import { usePlayerStore } from '../../store/player';
 
@@ -61,6 +62,8 @@ export function RecorderPage() {
   const [markForm] = Form.useForm<{ category: VagueCategory; rawPhrase: string; assigneeId?: string }>();
   const [createdCount, setCreatedCount] = useState(0);
   const [playhead, setPlayhead] = useState(0);
+  // 人工录入的转写"成稿"时是否套用家族词表（只在还没套过词表时可用）
+  const [applyOnSave, setApplyOnSave] = useState(false);
   const playLocal = usePlayerStore((s) => s.play);
   // 本地试听用的 blob URL 必须显式释放，否则每次重录都会漏一份内存
   const objectUrlRef = useRef<string | null>(null);
@@ -83,6 +86,12 @@ export function RecorderPage() {
   const members = useQuery({
     queryKey: ['members', workspaceId],
     queryFn: () => workspaceApi.members(workspaceId!),
+    enabled: Boolean(workspaceId),
+  });
+
+  const glossaryEntries = useQuery({
+    queryKey: ['glossary', workspaceId],
+    queryFn: () => glossaryApi.list(workspaceId!),
     enabled: Boolean(workspaceId),
   });
 
@@ -111,6 +120,8 @@ export function RecorderPage() {
       setRecorded(null);
       if (result.needsManualInput) {
         message.info('音频已保存。当前转写模式是"人工录入"，请在右侧把听到的内容打下来。');
+      } else if (result.replacementCount) {
+        message.success(`已用 ${result.provider} 自动转写，家族词表替换了 ${result.replacementCount} 处用词，请核对。`);
       } else {
         message.success(`已用 ${result.provider} 自动转写，请核对后修改。`);
       }
@@ -121,11 +132,22 @@ export function RecorderPage() {
   });
 
   const saveTranscriptMutation = useMutation({
-    mutationFn: () => audioApi.updateTranscript(audio!.id, transcript),
+    mutationFn: () =>
+      // 只有还没留过原始说法（即第一次成稿）时，勾选框才会真正触发词表替换
+      audioApi.updateTranscript(audio!.id, transcript, {
+        applyGlossary: applyOnSave && !audio!.transcriptRaw,
+      }),
     onSuccess: (updated) => {
       setAudio(updated);
-      message.success('转写文本已保存');
+      setApplyOnSave(false);
+      const replaced = updated.replacements?.length ?? 0;
+      message.success(
+        replaced > 0
+          ? `转写文本已保存，家族词表替换了 ${replaced} 处，请在下方逐条核对`
+          : '转写文本已保存',
+      );
       void queryClient.invalidateQueries({ queryKey: ['audio', recipeId] });
+      void queryClient.invalidateQueries({ queryKey: ['glossary', workspaceId] });
     },
     onError: (error) => message.error(errorMessage(error)),
   });
@@ -388,6 +410,34 @@ export function RecorderPage() {
                 自动找找哪句说不清
               </Button>
             </div>
+
+            {audio.transcriptRaw ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                这段转写已经套用过家族词表，之后保存只是人工编辑，不会重复替换。
+              </Typography.Text>
+            ) : (
+              (glossaryEntries.data ?? []).some((entry) => entry.enabled) && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={applyOnSave}
+                    onChange={(event) => setApplyOnSave(event.target.checked)}
+                  />
+                  <span className="froa-hint">
+                    保存时套用家族词表（自动把方言换成标准说法，原始说法会保留下来供核对）
+                  </span>
+                </label>
+              )
+            )}
+
+            <TranscriptGlossaryReview
+              audio={audio}
+              onReviewed={(updated) => {
+                setAudio(updated);
+                setTranscript(updated.transcript ?? '');
+                void queryClient.invalidateQueries({ queryKey: ['glossary', workspaceId] });
+              }}
+            />
 
             {suggestionMutation.data && (
               <>

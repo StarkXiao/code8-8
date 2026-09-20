@@ -43,6 +43,7 @@ model User {
   notifications      Notification[]
   activities         ActivityLog[]
   referencesCreated  KitchenReference[]
+  glossaryCreated    GlossaryEntry[]    @relation("GlossaryCreated")
 }
 
 model Workspace {
@@ -59,6 +60,7 @@ model Workspace {
   audio      AudioAttachment[]
   activities ActivityLog[]
   references KitchenReference[]
+  glossary   GlossaryEntry[]
 }
 
 model WorkspaceMember {
@@ -91,6 +93,34 @@ model KitchenReference {
   creator   User      @relation(fields: [createdBy], references: [id])
 
   @@unique([workspaceId, label])
+}
+
+/// 家族词表：收录长辈常用的方言与习惯用词，转写成稿时自动替换成标准说法。
+/// 替换结果一律"待核对"，原始说法永久保留在音频转写的 transcriptRaw 上。
+model GlossaryEntry {
+  id          String   @id
+  workspaceId String
+  /// 方言 / 习惯用词原文，例如"洋柿子"
+  dialect     String
+  /// 对应的标准说法，例如"西红柿"
+  standard    String
+  /// dialect | habit
+  type        String   @default("dialect")
+  note        String?
+  /// 是否参与自动替换
+  enabled     Boolean  @default(true)
+  /// 命中过多少条转写（命中时累加，不随还原减少），方便发现"最常用的家乡话"
+  usageCount  Int      @default(0)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("GlossaryCreated", fields: [createdBy], references: [id])
+
+  /// 同一原始说法在一个家庭空间里只保留一条：后登记的覆盖更新
+  @@unique([workspaceId, dialect])
+  @@index([workspaceId, enabled])
 }
 
 // ------------------------------------------------------------------
@@ -213,7 +243,12 @@ model AudioAttachment {
   /// JSON 数字数组：客户端预计算的归一化波形峰值
   peaks            String?
   sha256           String
+  /// 成稿转写：套用家族词表、经人工编辑后的文本
   transcript       String?
+  /// 套用词表之前的原始说法；任何自动替换都能对照它核对、还原
+  transcriptRaw    String?
+  /// JSON：TranscriptReplacement[]，每一处自动替换的核对状态
+  replacements     String?
   transcriptStatus String    @default("none")
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())

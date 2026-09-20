@@ -109,6 +109,39 @@ async function main() {
     ],
   });
 
+  // 家族词表：收录外婆常用的方言与习惯用词。
+  // 转写成稿时自动替换成标准说法，原始说法永久保留、逐条可核对还原。
+  await prisma.glossaryEntry.createMany({
+    data: [
+      {
+        id: 'seed-glossary-1',
+        workspaceId: workspace.id,
+        dialect: '洋柿子',
+        standard: '西红柿',
+        type: 'dialect',
+        note: '外婆一直这么叫',
+        createdBy: organizer.id,
+      },
+      {
+        id: 'seed-glossary-2',
+        workspaceId: workspace.id,
+        dialect: '大料',
+        standard: '八角',
+        type: 'habit',
+        note: '长辈习惯叫"大料"',
+        createdBy: organizer.id,
+      },
+      {
+        id: 'seed-glossary-3',
+        workspaceId: workspace.id,
+        dialect: '窝锅',
+        standard: '盖上锅盖焖',
+        type: 'dialect',
+        createdBy: organizer.id,
+      },
+    ],
+  });
+
   console.log('✔ 基线数据写入完成');
   console.log(`  空间：${workspace.name}（邀请码 ${workspace.inviteCode}）`);
   console.log(`  账号：${organizer.email} / ${elder.email}`);
